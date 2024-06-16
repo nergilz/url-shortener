@@ -2,9 +2,11 @@ package urlshortener
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
 	"url-shortener/internal/common"
 	"url-shortener/internal/config"
+	"url-shortener/internal/http-server/handlers/url/save"
 	"url-shortener/internal/lid/logger/sl"
 	"url-shortener/internal/storage/sqlite"
 
@@ -31,8 +33,23 @@ func AppRun() {
 	router.Use(middleware.RequestID)
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
+	router.Post("/url", save.New(log, appStorage))
 
-	// TODO: run server
+	srv := &http.Server{
+		Addr:         cfg.Server.Address,
+		Handler:      router,
+		ReadTimeout:  cfg.Server.TimeOut,
+		WriteTimeout: cfg.Server.TimeOut,
+		IdleTimeout:  cfg.Server.IdleTimeout,
+	}
+
+	log.Info("start server", slog.String("address", cfg.Server.Address))
+
+	if err := srv.ListenAndServe(); err != nil {
+		log.Error("failed run server", sl.Err(err))
+	}
+
+	log.Info("stop server")
 }
 
 func setupLogger(env string) *slog.Logger {
