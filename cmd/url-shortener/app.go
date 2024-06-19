@@ -6,6 +6,7 @@ import (
 	"os"
 	"url-shortener/internal/common"
 	"url-shortener/internal/config"
+	"url-shortener/internal/http-server/handlers/redirect"
 	"url-shortener/internal/http-server/handlers/url/save"
 	"url-shortener/internal/lid/logger/sl"
 	"url-shortener/internal/storage/sqlite"
@@ -15,13 +16,13 @@ import (
 )
 
 func AppRun() {
-	cfg := config.MustLoad()
+	appCfg := config.MustLoad()
 
-	log := setupLogger(cfg.Env)
-	log.Info("starting url-shortiner", slog.String("env", cfg.Env))
+	log := setupLogger(appCfg.Env)
+	log.Info("starting url-shortiner", slog.String("env", appCfg.Env))
 	log.Debug("debug are enabled")
 
-	appStorage, err := sqlite.New(cfg.StoragePath)
+	appStorage, err := sqlite.New(appCfg.StoragePath)
 	if err != nil {
 		log.Error("failed to init storage", sl.Err(err))
 		os.Exit(1)
@@ -33,17 +34,27 @@ func AppRun() {
 	router.Use(middleware.RequestID)
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
-	router.Post("/url", save.New(log, appStorage))
+	router.Use(middleware.URLFormat)
+
+	router.Route("/url", func(r chi.Router) {
+		r.Use(middleware.BasicAuth("url-shortiner", map[string]string{
+			appCfg.Server.User: appCfg.Server.Password,
+		}))
+
+		r.Post("/add", save.New(log, appStorage))
+	})
+
+	router.Get("/redirect/{alias}", redirect.New(log, appStorage))
 
 	srv := &http.Server{
-		Addr:         cfg.Server.Address,
+		Addr:         appCfg.Server.Address,
 		Handler:      router,
-		ReadTimeout:  cfg.Server.TimeOut,
-		WriteTimeout: cfg.Server.TimeOut,
-		IdleTimeout:  cfg.Server.IdleTimeout,
+		ReadTimeout:  appCfg.Server.TimeOut,
+		WriteTimeout: appCfg.Server.TimeOut,
+		IdleTimeout:  appCfg.Server.IdleTimeout,
 	}
 
-	log.Info("start server", slog.String("address", cfg.Server.Address))
+	log.Info("start server", slog.String("address", appCfg.Server.Address))
 
 	if err := srv.ListenAndServe(); err != nil {
 		log.Error("failed run server", sl.Err(err))
@@ -70,7 +81,5 @@ func setupLogger(env string) *slog.Logger {
 			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
 		)
 	}
-
 	return log
-
 }

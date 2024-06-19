@@ -79,7 +79,7 @@ func (s *Storage) GetURL(alias string) (string, error) {
 
 	var resUrl string
 
-	if err = smtp.QueryRow(alias).Scan(resUrl); err != nil {
+	if err = smtp.QueryRow(alias).Scan(&resUrl); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", storage.ErrUrlNotFound
 		}
